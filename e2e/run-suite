@@ -1,0 +1,42 @@
+#!/bin/bash
+set -xeo pipefail
+
+. e2e/variables
+
+HOST=${HOST:-$DEFAULT_HOST}
+PORT=${PORT:-$DEFAULT_PORT}
+
+echo -e "Starting Cypress scenarios"
+
+args=("$@")
+
+CMD="start"
+PARAMS=""
+SLOWMO=0
+URL=${BASE_URL:-"http://$HOST:$PORT"}
+integrationFolder=../../e2e 
+testFiles=*-suite/*spec.ts
+
+cd packages/grafana-e2e
+
+case "$1" in 
+    "debug")
+        echo -e "Debug mode"
+        SLOWMO=1
+        PARAMS="--no-exit"
+        ;;
+    "dev")
+        echo "Dev mode"
+        CMD="open"
+        ;;
+    "")
+        ;;
+    *)
+        integrationFolder=../../e2e/"${args[0]}"
+        testFiles="*.spec.ts"
+        ;;
+esac
+
+yarn $CMD --env BASE_URL=$URL,SLOWMO=$SLOWMO \
+  --config defaultCommandTimeout=30000,testFiles=$testFiles,integrationFolder=$integrationFolder,screenshotsFolder=../../e2e/"${args[0]}"/screenshots,videosFolder=../../e2e/"${args[0]}"/videos,fileServerFolder=./cypress,viewportWidth=1920,viewportHeight=1080,trashAssetsBeforeRuns=false,videoUploadOnPasses=false \
+  $PARAMS

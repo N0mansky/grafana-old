@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "jsx": "react",
+    "baseUrl": "public/",
+    "outDir": "public/dist",
+    "rootDirs": ["public/"],
+    "allowJs": true,
+    "strict": true,
+    "resolveJsonModule": true,
+    "useUnknownInCatchVariables": false,
+    "incremental": true
+  },
+  "extends": "@grafana/tsconfig/base.json",
+  "include": [
+    "public/app/**/*.ts*",
+    "public/e2e-test/**/*.ts",
+    "public/test/**/*.ts",
+    "public/vendor/**/*.ts",
+    "packages/jaeger-ui-components/typings",
+    "packages/grafana-data/typings"
+  ]
+}

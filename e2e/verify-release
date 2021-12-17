@@ -1,0 +1,5 @@
+#!/bin/bash
+
+. e2e/variables
+
+./e2e/run-suite verify/specs
