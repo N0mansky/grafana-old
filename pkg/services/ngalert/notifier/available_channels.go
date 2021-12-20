@@ -142,6 +142,42 @@ func GetAvailableNotifiers() []*alerting.NotifierPlugin {
 			},
 		},
 		{
+			Type:        "lark",
+			Name:        "Lark/Feishu",
+			Description: "Sends HTTP POST request to DingDing",
+			Heading:     "DingDing settings",
+			Options: []alerting.NotifierOption{
+				{
+					Label:        "Url",
+					Element:      alerting.ElementTypeInput,
+					InputType:    alerting.InputTypeText,
+					Placeholder:  "https://oapi.dingtalk.com/robot/send?access_token=xxxxxxxxx",
+					PropertyName: "url",
+					Required:     true,
+				},
+				{
+					Label:        "Message Type",
+					Element:      alerting.ElementTypeSelect,
+					PropertyName: "msgType",
+					SelectOptions: []alerting.SelectOption{
+						{
+							Value: "link",
+							Label: "Link"},
+						{
+							Value: "actionCard",
+							Label: "ActionCard",
+						},
+					},
+				},
+				{ // New in 8.0.
+					Label:        "Message",
+					Element:      alerting.ElementTypeTextArea,
+					Placeholder:  `{{ template "default.message" . }}`,
+					PropertyName: "message",
+				},
+			},
+		},
+		{
 			Type:        "kafka",
 			Name:        "Kafka REST Proxy",
 			Description: "Sends notifications to Kafka Rest Proxy",
