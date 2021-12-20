@@ -144,14 +144,14 @@ func GetAvailableNotifiers() []*alerting.NotifierPlugin {
 		{
 			Type:        "lark",
 			Name:        "Lark/Feishu",
-			Description: "Sends HTTP POST request to DingDing",
-			Heading:     "DingDing settings",
+			Description: "Sends HTTP POST request to Lark",
+			Heading:     "Lark/Feishu settings",
 			Options: []alerting.NotifierOption{
 				{
 					Label:        "Url",
 					Element:      alerting.ElementTypeInput,
 					InputType:    alerting.InputTypeText,
-					Placeholder:  "https://oapi.dingtalk.com/robot/send?access_token=xxxxxxxxx",
+					Placeholder:  "https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxx",
 					PropertyName: "url",
 					Required:     true,
 				},
@@ -164,8 +164,8 @@ func GetAvailableNotifiers() []*alerting.NotifierPlugin {
 							Value: "link",
 							Label: "Link"},
 						{
-							Value: "actionCard",
-							Label: "ActionCard",
+							Value: "card",
+							Label: "Card",
 						},
 					},
 				},
