@@ -7,9 +7,10 @@ import (
 	"github.com/grafana/grafana/pkg/infra/log"
 	"github.com/grafana/grafana/pkg/models"
 	"github.com/grafana/grafana/pkg/services/alerting"
+	"github.com/grafana/grafana/pkg/services/alerting/conditions"
 )
 
-const defaultLarkMsgType = "text"
+const defaultLarkMsgType = "card"
 const larkNotifierDescription = `Use https://open.larksuite.com/open-apis/bot/v2/hook/xxxxxxxxx for larksuite.
 Use https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxx for feishu.`
 
@@ -31,13 +32,46 @@ func init() {
 				Required:     true,
 			},
 			{
+				Label:        "Kibana Url",
+				Element:      alerting.ElementTypeInput,
+				InputType:    alerting.InputTypeText,
+				Placeholder:  "https://elk.internal.pingxx.com/xxxx",
+				PropertyName: "kibUrl",
+				Required:     true,
+			},
+			{
 				Label:        "Message Type",
 				Element:      alerting.ElementTypeSelect,
 				PropertyName: "msgType",
+				Required:     true,
 				SelectOptions: []alerting.SelectOption{
+					{
+						Value: "card",
+						Label: "Card",
+					},
 					{
 						Value: "text",
 						Label: "Text",
+					},
+				},
+			},
+			{
+				Label:        "Environment",
+				Element:      alerting.ElementTypeSelect,
+				PropertyName: "environment",
+				Required:     true,
+				SelectOptions: []alerting.SelectOption{
+					{
+						Value: "sit",
+						Label: "SIT",
+					},
+					{
+						Value: "uat",
+						Label: "UAT",
+					},
+					{
+						Value: "prod",
+						Label: "PROD",
 					},
 				},
 			},
@@ -47,6 +81,8 @@ func init() {
 
 func newLarkNotifier(model *models.AlertNotification, _ alerting.GetDecryptedValueFn) (alerting.Notifier, error) {
 	url := model.Settings.Get("url").MustString()
+	env := model.Settings.Get("environment").MustString()
+	kibUrl := model.Settings.Get("kibUrl").MustString()
 	if url == "" {
 		return nil, alerting.ValidationError{Reason: "Could not find url property in settings"}
 	}
@@ -56,6 +92,8 @@ func newLarkNotifier(model *models.AlertNotification, _ alerting.GetDecryptedVal
 		NotifierBase: NewNotifierBase(model),
 		MsgType:      msgType,
 		URL:          url,
+		KibUrl:       kibUrl,
+		Environment:  env,
 		log:          log.New("alerting.notifier.lark"),
 	}, nil
 }
@@ -63,15 +101,16 @@ func newLarkNotifier(model *models.AlertNotification, _ alerting.GetDecryptedVal
 // LarkNotifier is responsible for sending alert notifications to ding ding.
 type LarkNotifier struct {
 	NotifierBase
-	MsgType string
-	URL     string
-	log     log.Logger
+	MsgType     string
+	Environment string
+	KibUrl      string
+	URL         string
+	log         log.Logger
 }
 
 // Notify sends the alert notification to lark.
 func (lark *LarkNotifier) Notify(evalContext *alerting.EvalContext) error {
 	lark.log.Info("Sending lark")
-
 	messageURL, err := evalContext.GetRuleURL()
 	if err != nil {
 		lark.log.Error("Failed to get messageUrl", "error", err, "lark", lark.Name)
@@ -100,9 +139,30 @@ func (lark *LarkNotifier) Notify(evalContext *alerting.EvalContext) error {
 
 func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL string) ([]byte, error) {
 	lark.log.Info("messageUrl:" + messageURL)
-
 	message := evalContext.Rule.Message
 	title := evalContext.GetNotificationTitle()
+	// Customized code head ---
+	statusFlg := "red"
+	alertStatus := evalContext.GetStateModel().Text
+	duid, _ := evalContext.GetDashboardUID()
+	moduleName := duid.Slug
+	desc := evalContext.Rule.Name
+	env := lark.Environment
+	indexName := ""
+	queryCondition := evalContext.Rule.Conditions[0].(*conditions.QueryCondition)
+	queryStr := queryCondition.Query.Model.Get("query")
+	for _, x := range evalContext.Rule.AlertRuleTags {
+		switch x.Key {
+		case "index_name":
+			indexName = x.Value
+		}
+	}
+	if alertStatus == "OK" {
+		statusFlg = "green"
+	}
+	lark.log.Debug(fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s", statusFlg, alertStatus,
+		moduleName, desc, env, indexName, queryStr))
+	// Customized code head tail
 	lark.log.Info("message: " + message)
 	lark.log.Info("title: " + title)
 	if message == "" {
@@ -123,6 +183,30 @@ func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL 
 		bodyMsg = map[string]interface{}{
 			"msg_type": "text",
 			"content":  content,
+		}
+	} else if lark.MsgType == "card" {
+		title := desc
+		content := message
+		bodyMsg = map[string]interface{}{
+			"msg_type": "interactive",
+			"card": map[string]interface{}{
+				"config": map[string]interface{}{
+					"wide_screen_mode": true,
+				},
+				"header": map[string]interface{}{
+					"title": map[string]interface{}{
+						"tag":     "plain_text",
+						"content": title,
+					},
+					"template": statusFlg,
+				},
+				"elements": []interface{}{
+					map[string]interface{}{
+						"tag":     "markdown",
+						"content": content,
+					},
+				},
+			},
 		}
 	}
 	return json.Marshal(bodyMsg)
