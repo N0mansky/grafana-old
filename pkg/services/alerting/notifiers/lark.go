@@ -150,7 +150,7 @@ func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL 
 	env := lark.Environment
 	indexName := ""
 	queryCondition := evalContext.Rule.Conditions[0].(*conditions.QueryCondition)
-	queryStr := queryCondition.Query.Model.Get("query")
+	queryStr := queryCondition.Query.Model.Get("query").MustString()
 	for _, x := range evalContext.Rule.AlertRuleTags {
 		switch x.Key {
 		case "index_name":
