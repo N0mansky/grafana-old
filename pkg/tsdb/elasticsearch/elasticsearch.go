@@ -68,6 +68,7 @@ func (s *Service) QueryData(ctx context.Context, req *backend.QueryDataRequest) 
 	}
 
 	client, err := es.NewClient(ctx, s.HTTPClientProvider, dsInfo, req.Queries[0].TimeRange)
+	client.EnableDebug()
 	if err != nil {
 		return &backend.QueryDataResponse{}, err
 	}

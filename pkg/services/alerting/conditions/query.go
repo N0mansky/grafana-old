@@ -50,6 +50,7 @@ type AlertQuery struct {
 func (c *QueryCondition) Eval(context *alerting.EvalContext, requestHandler legacydata.RequestHandler) (*alerting.ConditionResult, error) {
 	timeRange := legacydata.NewDataTimeRange(c.Query.From, c.Query.To)
 
+	context.IsDebug = true
 	seriesList, err := c.executeQuery(context, timeRange, requestHandler)
 	if err != nil {
 		return nil, err
@@ -236,6 +237,9 @@ func (c *QueryCondition) executeQuery(context *alerting.EvalContext, timeRange l
 		if context.IsTestRun || context.IsDebug {
 			if useDataframes {
 				queryResultData["fromDataframe"] = true
+				respDats, _ := v.Dataframes.Decoded()
+				respDat := respDats[0]
+				queryResultData["resp_data"] = respDat.Meta.Custom
 			}
 			context.Logs = append(context.Logs, &alerting.ResultLogEntry{
 				Message: fmt.Sprintf("Condition[%d]: Query Result", c.Index),

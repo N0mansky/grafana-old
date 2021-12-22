@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/grafana/grafana/pkg/bus"
+	"github.com/grafana/grafana/pkg/components/simplejson"
 	"github.com/grafana/grafana/pkg/infra/log"
 	"github.com/grafana/grafana/pkg/models"
 	"github.com/grafana/grafana/pkg/services/alerting"
@@ -11,8 +12,6 @@ import (
 )
 
 const defaultLarkMsgType = "card"
-const larkNotifierDescription = `Use https://open.larksuite.com/open-apis/bot/v2/hook/xxxxxxxxx for larksuite.
-Use https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxx for feishu.`
 
 func init() {
 	alerting.RegisterNotifier(&alerting.NotifierPlugin{
@@ -24,7 +23,6 @@ func init() {
 		Options: []alerting.NotifierOption{
 			{
 				Label:        "Url",
-				Description:  larkNotifierDescription,
 				Element:      alerting.ElementTypeInput,
 				InputType:    alerting.InputTypeText,
 				Placeholder:  "https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxx",
@@ -83,10 +81,10 @@ func newLarkNotifier(model *models.AlertNotification, _ alerting.GetDecryptedVal
 	url := model.Settings.Get("url").MustString()
 	env := model.Settings.Get("environment").MustString()
 	kibUrl := model.Settings.Get("kibUrl").MustString()
+	msgType := model.Settings.Get("msgType").MustString(defaultLarkMsgType)
 	if url == "" {
 		return nil, alerting.ValidationError{Reason: "Could not find url property in settings"}
 	}
-	msgType := model.Settings.Get("msgType").MustString(defaultLarkMsgType)
 
 	return &LarkNotifier{
 		NotifierBase: NewNotifierBase(model),
@@ -139,45 +137,38 @@ func (lark *LarkNotifier) Notify(evalContext *alerting.EvalContext) error {
 
 func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL string) ([]byte, error) {
 	lark.log.Info("messageUrl:" + messageURL)
-	message := evalContext.Rule.Message
-	title := evalContext.GetNotificationTitle()
-	// Customized code head ---
-	statusFlg := "red"
-	alertStatus := evalContext.GetStateModel().Text
-	duid, _ := evalContext.GetDashboardUID()
-	moduleName := duid.Slug
-	desc := evalContext.Rule.Name
-	env := lark.Environment
-	indexName := ""
 	queryCondition := evalContext.Rule.Conditions[0].(*conditions.QueryCondition)
 	queryStr := queryCondition.Query.Model.Get("query").MustString()
+	rst := map[string]string{
+		"rule_msg":     evalContext.Rule.Message,
+		"title":        evalContext.GetNotificationTitle(),
+		"alert_status": evalContext.GetStateModel().Text,
+		"desc":         evalContext.Rule.Name,
+		"env":          lark.Environment,
+		"raw_query":    queryStr,
+		"alert_color":  "red",
+	}
+	if rst["alert_status"] == "OK" {
+		rst["alert_color"] = "green"
+	}
+	//  Parse tags and put them to rst
 	for _, x := range evalContext.Rule.AlertRuleTags {
-		switch x.Key {
-		case "index_name":
-			indexName = x.Value
-		}
+		rst[x.Key] = x.Value
 	}
-	if alertStatus == "OK" {
-		statusFlg = "green"
+	// Parse logs and put them to rst
+	logMap, _ := lark.parseLog(evalContext)
+	for k, v := range logMap {
+		rst[k] = v
 	}
-	lark.log.Debug(fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s", statusFlg, alertStatus,
-		moduleName, desc, env, indexName, queryStr))
-	// Customized code head tail
-	lark.log.Info("message: " + message)
-	lark.log.Info("title: " + title)
-	if message == "" {
-		message = title
-	}
-
+	lark.log.Info(fmt.Sprintf("rst map: %v", rst))
 	for i, match := range evalContext.EvalMatches {
-		message += fmt.Sprintf("\n%2d. %s: %s", i+1, match.Metric, match.Value)
+		rst["rule_msg"] += fmt.Sprintf("\n%2d. %s: %s", i+1, match.Metric, match.Value)
 	}
-	message += fmt.Sprintf("\n%s", messageURL)
-
+	rst["rule_msg"] += fmt.Sprintf("\n%s", messageURL)
 	var bodyMsg map[string]interface{}
 	if lark.MsgType == "text" {
 		content := map[string]string{
-			"text": message,
+			"text": rst["rule_msg"],
 		}
 
 		bodyMsg = map[string]interface{}{
@@ -185,8 +176,8 @@ func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL 
 			"content":  content,
 		}
 	} else if lark.MsgType == "card" {
-		title := desc
-		content := message
+		title := rst["desc"]
+		content := rst["rule_message"]
 		bodyMsg = map[string]interface{}{
 			"msg_type": "interactive",
 			"card": map[string]interface{}{
@@ -198,7 +189,7 @@ func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL 
 						"tag":     "plain_text",
 						"content": title,
 					},
-					"template": statusFlg,
+					"template": rst["alert_color"],
 				},
 				"elements": []interface{}{
 					map[string]interface{}{
@@ -210,4 +201,25 @@ func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL 
 		}
 	}
 	return json.Marshal(bodyMsg)
+}
+
+func (lark *LarkNotifier) parseLog(evalContext *alerting.EvalContext) (map[string]string, error) {
+	rst := map[string]string{"trace_id": "", "request_id": "", "message": "", "request_method": ""}
+	rstLogEntry := evalContext.Logs[1].Data.(*simplejson.Json)
+	resDat := rstLogEntry.GetPath("resp_data")
+	resByte, err := resDat.MarshalJSON()
+	resJson, err := simplejson.NewJson(resByte)
+	hits := resJson.GetPath("response", "data", "responses").
+		GetIndex(0).
+		GetPath("hits", "hits").
+		GetIndex(0)
+	_source := hits.Get("_source")
+	// Get document field from _source
+	for k, v := range rst {
+		rst[k] = _source.Get(k).MustString(v)
+	}
+	// Get index name from hit
+	_index := hits.Get("_index").MustString("")
+	rst["index"] = _index
+	return rst, err
 }
