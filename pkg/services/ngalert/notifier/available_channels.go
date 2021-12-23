@@ -142,6 +142,42 @@ func GetAvailableNotifiers() []*alerting.NotifierPlugin {
 			},
 		},
 		{
+			Type:        "lark",
+			Name:        "Lark/Feishu",
+			Description: "Sends HTTP POST request to Lark",
+			Heading:     "Lark/Feishu settings",
+			Options: []alerting.NotifierOption{
+				{
+					Label:        "Url",
+					Element:      alerting.ElementTypeInput,
+					InputType:    alerting.InputTypeText,
+					Placeholder:  "https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxxx",
+					PropertyName: "url",
+					Required:     true,
+				},
+				{
+					Label:        "Message Type",
+					Element:      alerting.ElementTypeSelect,
+					PropertyName: "msgType",
+					SelectOptions: []alerting.SelectOption{
+						{
+							Value: "link",
+							Label: "Link"},
+						{
+							Value: "card",
+							Label: "Card",
+						},
+					},
+				},
+				{ // New in 8.0.
+					Label:        "Message",
+					Element:      alerting.ElementTypeTextArea,
+					Placeholder:  `{{ template "default.message" . }}`,
+					PropertyName: "message",
+				},
+			},
+		},
+		{
 			Type:        "kafka",
 			Name:        "Kafka REST Proxy",
 			Description: "Sends notifications to Kafka Rest Proxy",
