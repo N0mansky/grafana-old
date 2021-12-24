@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/grafana/pkg/services/alerting"
 	"github.com/grafana/grafana/pkg/services/alerting/conditions"
 	"net/url"
+	"regexp"
 	"text/template"
 	"time"
 )
@@ -141,6 +142,11 @@ func (lark *LarkNotifier) Notify(evalContext *alerting.EvalContext) error {
 
 func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL string) ([]byte, error) {
 	lark.log.Info("messageUrl:" + messageURL)
+	alertStatus := evalContext.GetStateModel().Text
+	alertColor := "red"
+	if alertStatus == "OK" {
+		alertColor = "green"
+	}
 	rst := make(map[string]string)
 	if !evalContext.IsTestRun {
 		queryCondition := evalContext.Rule.Conditions[0].(*conditions.QueryCondition)
@@ -151,45 +157,30 @@ func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL 
 			messageURL = ""
 		}
 		rst = map[string]string{
-			"rule_msg":     evalContext.Rule.Message,
-			"messageUrl":   messageURL,
-			"title":        evalContext.GetNotificationTitle(),
-			"alert_status": evalContext.GetStateModel().Text,
-			"desc":         evalContext.Rule.Name,
-			"env":          lark.Environment,
-			"raw_query":    queryStr,
-			"alert_color":  "red",
+			"rule_msg":   evalContext.Rule.Message,
+			"messageUrl": messageURL,
+			"title":      evalContext.GetNotificationTitle(),
+			"env":        lark.Environment,
+			"raw_query":  queryStr,
 		}
-		if rst["alert_status"] == "OK" {
-			rst["alert_color"] = "green"
+		// Parse Response logs and put them to rst
+		logResMap, _ := lark.parseResLog(evalContext)
+		for k, v := range logResMap {
+			rst[k] = v
+		}
+		// Parse Request logs and put them to rst
+		logReqMap := lark.parseReqLog(evalContext)
+		for k, v := range logReqMap {
+			rst[k] = v
 		}
 		//  Parse tags and put them to rst
 		for _, x := range evalContext.Rule.AlertRuleTags {
 			rst[x.Key] = x.Value
 		}
-		// Parse logs and put them to rst
-		logMap, _ := lark.parseLog(evalContext)
-		for k, v := range logMap {
-			rst[k] = v
-		}
-		// Generate log url
-		reqDataJson := evalContext.Logs[0].Data.(*simplejson.Json)
-		from := time.UnixMilli(reqDataJson.GetPath("from").MustInt64()).
-			Add(-8 * time.Hour).Format("2006-01-02T15:04:05.000Z")
-		to := time.UnixMilli(reqDataJson.GetPath("to").MustInt64()).
-			Add(-8 * time.Hour).Format("2006-01-02T15:04:05.000Z")
-		logUrl := fmt.Sprintf(`%s/app/kibana#/discover?_g=(refreshInterval:(display:Off,pause:!f,value:0),`+
-			`time:(from:'%s',mode:absolute,to:'%s'))`+
-			`&_a=(columns:!(_source),index:%s,interval:auto,`+
-			`query:(query_string:(analyze_wildcard:!t,query:'%s')),sort:!('@timestamp',desc))`,
-			lark.KibUrl, from, to, rst["index_pattern_id"], rst["raw_query"])
-		resUri, err := url.Parse(logUrl)
-		rst["logUrl"] = resUri.String()
 	}
 	for _, match := range evalContext.EvalMatches {
 		rst[match.Metric] = fmt.Sprintf("%s", match.Value)
 	}
-	rst["rule_msg"] += fmt.Sprintf("\n%s", messageURL)
 	var bodyMsg map[string]interface{}
 	switch lark.MsgType {
 	case "text":
@@ -200,7 +191,7 @@ func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL 
 			},
 		}
 	case "card":
-		title := rst["desc"]
+		title := rst["title"]
 		bodyMsg = map[string]interface{}{
 			"msg_type": "interactive",
 			"card": map[string]interface{}{
@@ -212,12 +203,12 @@ func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL 
 						"tag":     "plain_text",
 						"content": title,
 					},
-					"template": rst["alert_color"],
+					"template": alertColor,
 				},
 				"elements": []interface{}{
 					map[string]interface{}{
 						"tag":     "markdown",
-						"content": lark.renderTmpl(rst, rst["alert_status"]),
+						"content": lark.renderTmpl(rst, alertStatus),
 					},
 				},
 			},
@@ -226,22 +217,27 @@ func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL 
 	return json.Marshal(bodyMsg)
 }
 
-//parseLog parse log from elasticsearch and return a map[string]string
-func (lark *LarkNotifier) parseLog(evalContext *alerting.EvalContext) (map[string]string, error) {
-	// Get request Condition[0]: Query
-	rst := map[string]string{
-		"trace_id":       "",
-		"request_id":     "",
-		"message":        "",
-		"request_method": "",
-		"module":         "",
-		"request_uri":    "",
-	}
+//parseResLog parse log from elasticsearch and return a map[string]string
+func (lark *LarkNotifier) parseResLog(evalContext *alerting.EvalContext) (map[string]string, error) {
 	// Get request result : Condition[0]: Query Result
+	dbRef, err := evalContext.GetDashboardUID()
+	defaultModuleName := dbRef.Slug
+	if err != nil {
+		defaultModuleName = ""
+	}
+	rst := map[string]string{
+		"trace_id":   "",
+		"request_id": "",
+		"message":    "",
+		"module":     defaultModuleName,
+	}
 	rstLogEntry := evalContext.Logs[1].Data.(*simplejson.Json)
 	resDat := rstLogEntry.GetPath("resp_data")
 	resByte, err := resDat.MarshalJSON()
 	resJson, err := simplejson.NewJson(resByte)
+	queryData := resJson.GetPath("request", "data").MustString("")
+	r, _ := regexp.Compile(`index":"(.*)","`)
+	rst["index"] = r.FindStringSubmatch(queryData)[1]
 	hits := resJson.GetPath("response", "data", "responses").
 		GetIndex(0).
 		GetPath("hits", "hits").
@@ -252,41 +248,57 @@ func (lark *LarkNotifier) parseLog(evalContext *alerting.EvalContext) (map[strin
 		rst[k] = _source.Get(k).MustString(v)
 	}
 	// Get index name from hit
-	_index := hits.Get("_index").MustString("")
-	rst["index"] = _index
 	if len(rst["message"]) > 100 {
 		rst["message"] = rst["message"][:100]
 	}
 	return rst, err
 }
 
+func (lark *LarkNotifier) parseReqLog(evalContext *alerting.EvalContext) map[string]string {
+	// Get request Condition[0]: Query
+	reqDataJson := evalContext.Logs[0].Data.(*simplejson.Json)
+	from := time.UnixMilli(reqDataJson.GetPath("from").MustInt64()).
+		Add(-8 * time.Hour).Format("2006-01-02T15:04:05.000Z")
+	to := time.UnixMilli(reqDataJson.GetPath("to").MustInt64()).
+		Add(-8 * time.Hour).Format("2006-01-02T15:04:05.000Z")
+	rst := map[string]string{
+		"from": from,
+		"to":   to,
+	}
+	return rst
+}
+
 func (lark *LarkNotifier) renderTmpl(val map[string]string, t string) string {
 	txt := ""
+	logUrl := fmt.Sprintf(`%s/app/kibana#/discover?_g=(refreshInterval:(display:Off,pause:!f,value:0),`+
+		`time:(from:'%s',mode:absolute,to:'%s'))`+
+		`&_a=(columns:!(_source),index:%s,interval:auto,`+
+		`query:(query_string:(analyze_wildcard:!t,query:'%s')),sort:!('@timestamp',desc))`,
+		lark.KibUrl, val["from"], val["to"], val["index_pattern_id"], val["raw_query"])
+	resUri, err := url.Parse(logUrl)
+	val["logUrl"] = resUri.String()
 	switch t {
 	case "Alerting":
-		txt = "**状态:** {{.alert_status}}\n" +
-			"**模块名称:** {{.module}}\n" +
+		txt = "**模块名称:** {{.module}}\n" +
 			"**环境:** {{.env}}\n" +
 			"**查询index:** {{.index}}\n" +
 			"**查询query:** {{.raw_query}}\n" +
-			"**请求方法:** {{.request_method}}\n" +
-			"**请求地址:** {{.request_uri}}\n" +
-			"**报错信息:** {{.message}}\n" +
 			"**RequestID:** {{.request_id}}\n" +
 			"**TraceID:** {{.trace_id}}\n" +
 			"**报错数量:** {{.Count}}\n" +
+			"**报错日志:** {{.message}}\n" +
+			"**规则信息:** {{.rule_msg}}\n" +
 			"**图表:** [Grafana]({{.messageUrl}})\n" +
 			"**日志:** [Kibana]({{.logUrl}})\n" +
-			"<at id={{.responder}}></at>"
+			"<at id=all></at>"
 	case "OK":
-		txt = "**状态:** {{.alert_status}}\n" +
-			"**模块名称:** {{.module}}\n" +
+		txt = "**模块名称:** {{.module}}\n" +
 			"**环境:** {{.env}}\n" +
-			"**查询index:** {{.index}}\n" +
 			"**查询query:** {{.raw_query}}\n" +
+			"**规则信息:** {{.rule_msg}}\n" +
 			"**图表:** [Grafana]({{.messageUrl}})\n" +
 			"**日志:** [Kibana]({{.logUrl}})\n" +
-			"<at id={{.responder}}></at>"
+			"<at id=all></at>"
 	default:
 		txt = "testing"
 	}

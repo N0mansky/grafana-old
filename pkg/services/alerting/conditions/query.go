@@ -238,8 +238,10 @@ func (c *QueryCondition) executeQuery(context *alerting.EvalContext, timeRange l
 			if useDataframes {
 				queryResultData["fromDataframe"] = true
 				respDats, _ := v.Dataframes.Decoded()
-				respDat := respDats[0]
-				queryResultData["resp_data"] = respDat.Meta.Custom
+				if len(respDats) > 0 {
+					respDat := respDats[0]
+					queryResultData["resp_data"] = respDat.Meta.Custom
+				}
 			}
 			context.Logs = append(context.Logs, &alerting.ResultLogEntry{
 				Message: fmt.Sprintf("Condition[%d]: Query Result", c.Index),
