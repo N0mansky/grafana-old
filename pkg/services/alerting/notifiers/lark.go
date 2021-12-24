@@ -59,6 +59,22 @@ func init() {
 				},
 			},
 			{
+				Label:        "Elastic Version",
+				Element:      alerting.ElementTypeSelect,
+				PropertyName: "esVer",
+				Required:     true,
+				SelectOptions: []alerting.SelectOption{
+					{
+						Value: "5",
+						Label: "5.x",
+					},
+					{
+						Value: "7",
+						Label: "7.7+",
+					},
+				},
+			},
+			{
 				Label:        "Environment",
 				Element:      alerting.ElementTypeSelect,
 				PropertyName: "environment",
@@ -86,6 +102,7 @@ func newLarkNotifier(model *models.AlertNotification, _ alerting.GetDecryptedVal
 	url := model.Settings.Get("url").MustString()
 	env := model.Settings.Get("environment").MustString()
 	kibUrl := model.Settings.Get("kibUrl").MustString()
+	esVer := model.Settings.Get("esVer").MustString("7")
 	msgType := model.Settings.Get("msgType").MustString(defaultLarkMsgType)
 	if url == "" {
 		return nil, alerting.ValidationError{Reason: "Could not find url property in settings"}
@@ -96,6 +113,7 @@ func newLarkNotifier(model *models.AlertNotification, _ alerting.GetDecryptedVal
 		MsgType:      msgType,
 		URL:          url,
 		KibUrl:       kibUrl,
+		EsVer:        esVer,
 		Environment:  env,
 		log:          log.New("alerting.notifier.lark"),
 	}, nil
@@ -107,6 +125,7 @@ type LarkNotifier struct {
 	MsgType     string
 	Environment string
 	KibUrl      string
+	EsVer       string
 	URL         string
 	log         log.Logger
 }
@@ -208,7 +227,7 @@ func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL 
 				"elements": []interface{}{
 					map[string]interface{}{
 						"tag":     "markdown",
-						"content": lark.renderTmpl(rst, alertStatus),
+						"content": lark.renderTmpl(rst, evalContext),
 					},
 				},
 			},
@@ -268,16 +287,27 @@ func (lark *LarkNotifier) parseReqLog(evalContext *alerting.EvalContext) map[str
 	return rst
 }
 
-func (lark *LarkNotifier) renderTmpl(val map[string]string, t string) string {
+func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alerting.EvalContext) string {
 	txt := ""
-	logUrl := fmt.Sprintf(`%s/app/kibana#/discover?_g=(refreshInterval:(display:Off,pause:!f,value:0),`+
-		`time:(from:'%s',mode:absolute,to:'%s'))`+
-		`&_a=(columns:!(_source),index:%s,interval:auto,`+
-		`query:(query_string:(analyze_wildcard:!t,query:'%s')),sort:!('@timestamp',desc))`,
-		lark.KibUrl, val["from"], val["to"], val["index_pattern_id"], val["raw_query"])
+	logUrl := ""
+	switch lark.EsVer {
+	case "5":
+		logUrl = fmt.Sprintf(`%s/app/kibana#/discover?_g=(refreshInterval:(display:Off,pause:!f,value:0),`+
+			`time:(from:'%s',mode:absolute,to:'%s'))`+
+			`&_a=(columns:!(_source),index:%s,interval:auto,`+
+			`query:(query_string:(analyze_wildcard:!t,query:'%s')),sort:!('@timestamp',desc))`,
+			lark.KibUrl, val["from"], val["to"], val["index_pattern_id"], val["raw_query"])
+	case "7":
+		logUrl = fmt.Sprintf(`%s/app/kibana#/discover?_g=(filters:!(),refreshInterval:(pause:!t,value:0),`+
+			`time:(from:'%s',to:'%s'))`+
+			`&_a=(columns:!(_source),filters:!(),index:'%s',interval:auto,`+
+			`query:(language:kuery,query:' %s '),sort:!())`,
+			lark.KibUrl, val["from"], val["to"], val["index_pattern_id"], val["raw_query"])
+	}
 	resUri, err := url.Parse(logUrl)
 	val["logUrl"] = resUri.String()
-	switch t {
+	alertStatus := evalContext.GetStateModel().Text
+	switch alertStatus {
 	case "Alerting":
 		txt = "**模块名称:** {{.module}}\n" +
 			"**环境:** {{.env}}\n" +
@@ -303,7 +333,7 @@ func (lark *LarkNotifier) renderTmpl(val map[string]string, t string) string {
 		txt = "testing"
 	}
 	var txtRstByte bytes.Buffer
-	tmpl, err := template.New(t).Parse(txt)
+	tmpl, err := template.New(alertStatus).Parse(txt)
 	if err != nil {
 		lark.log.Error(err.Error())
 		return txt
