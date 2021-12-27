@@ -290,6 +290,9 @@ func (lark *LarkNotifier) parseReqLog(evalContext *alerting.EvalContext) map[str
 func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alerting.EvalContext) string {
 	txt := ""
 	logUrl := ""
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	st := evalContext.Rule.LastStateChange.In(loc)
+	val["stateTime"] = st.Format("2006-01-02 15:04:05")
 	switch lark.EsVer {
 	case "5":
 		logUrl = fmt.Sprintf(`%s/app/kibana#/discover?_g=(refreshInterval:(display:Off,pause:!f,value:0),`+
@@ -311,6 +314,7 @@ func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alertin
 	case "Alerting":
 		txt = "**模块名称:** {{.module}}\n" +
 			"**环境:** {{.env}}\n" +
+			"**发生时间:** {{.stateTime}}\n" +
 			"**查询index:** {{.index}}\n" +
 			"**查询query:** {{.raw_query}}\n" +
 			"**RequestID:** {{.request_id}}\n" +
@@ -324,6 +328,7 @@ func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alertin
 	case "OK":
 		txt = "**模块名称:** {{.module}}\n" +
 			"**环境:** {{.env}}\n" +
+			"**恢复时间:** {{.stateTime}}\n" +
 			"**查询index:** {{.index}}\n" +
 			"**查询query:** {{.raw_query}}\n" +
 			"**规则信息:** {{.rule_msg}}\n" +
