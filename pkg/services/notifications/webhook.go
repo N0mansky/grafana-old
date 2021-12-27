@@ -66,8 +66,10 @@ func (ns *NotificationService) sendWebRequestSync(ctx context.Context, webhook *
 	proxyUrl, err := url.Parse(proxyStr)
 	if err == nil && proxyUrl.String() != "" {
 		netTransport.Proxy = http.ProxyURL(proxyUrl)
+		netTransport.DisableKeepAlives = true
 	} else {
 		netTransport.Proxy = http.ProxyFromEnvironment
+		netTransport.DisableKeepAlives = false
 	}
 
 	request.Header.Set("Content-Type", webhook.ContentType)
