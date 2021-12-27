@@ -324,6 +324,7 @@ func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alertin
 	case "OK":
 		txt = "**模块名称:** {{.module}}\n" +
 			"**环境:** {{.env}}\n" +
+			"**查询index:** {{.index}}\n" +
 			"**查询query:** {{.raw_query}}\n" +
 			"**规则信息:** {{.rule_msg}}\n" +
 			"**图表:** [Grafana]({{.messageUrl}})\n" +
