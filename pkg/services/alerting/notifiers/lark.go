@@ -315,7 +315,7 @@ func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alertin
 		logUrl = fmt.Sprintf(`%s/app/kibana#/discover?_g=(filters:!(),refreshInterval:(pause:!t,value:0),`+
 			`time:(from:'%s',to:'%s'))`+
 			`&_a=(columns:!(_source),filters:!(),index:'%s',interval:auto,`+
-			`query:(language:kuery,query:' %s '),sort:!())`,
+			`query:(language:lucene,query:' %s '),sort:!())`,
 			lark.KibUrl, val["from"], val["to"], val["index_pattern_id"], val["raw_query"])
 	}
 	resUri, err := url.Parse(logUrl)
