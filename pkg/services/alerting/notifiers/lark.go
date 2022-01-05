@@ -278,8 +278,9 @@ func (lark *LarkNotifier) parseResLog(evalContext *alerting.EvalContext) (map[st
 		rst[k] = _source.Get(k).MustString(v)
 	}
 	// Get index name from hit
-	if len(rst["message"]) > 100 {
-		rst["message"] = rst["message"][:100]
+	msgRune := []rune(rst["message"])
+	if len(msgRune) > 200 {
+		rst["message"] = string(msgRune[:200])
 	}
 	return rst, err
 }
