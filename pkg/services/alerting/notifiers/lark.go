@@ -35,6 +35,14 @@ func init() {
 				Required:     true,
 			},
 			{
+				Label:        "Proxy URL",
+				Element:      alerting.ElementTypeInput,
+				InputType:    alerting.InputTypeText,
+				Placeholder:  "http://19.49.2.125:35366",
+				PropertyName: "proxyUrl",
+				Required:     false,
+			},
+			{
 				Label:        "Kibana Url",
 				Element:      alerting.ElementTypeInput,
 				InputType:    alerting.InputTypeText,
@@ -100,6 +108,7 @@ func init() {
 
 func newLarkNotifier(model *models.AlertNotification, _ alerting.GetDecryptedValueFn) (alerting.Notifier, error) {
 	url := model.Settings.Get("url").MustString()
+	proxyUrl := model.Settings.Get("proxyUrl").MustString()
 	env := model.Settings.Get("environment").MustString()
 	kibUrl := model.Settings.Get("kibUrl").MustString()
 	esVer := model.Settings.Get("esVer").MustString("7")
@@ -113,6 +122,7 @@ func newLarkNotifier(model *models.AlertNotification, _ alerting.GetDecryptedVal
 		MsgType:      msgType,
 		URL:          url,
 		KibUrl:       kibUrl,
+		ProxyUrl:     proxyUrl,
 		EsVer:        esVer,
 		Environment:  env,
 		log:          log.New("alerting.notifier.lark"),
@@ -125,6 +135,7 @@ type LarkNotifier struct {
 	MsgType     string
 	Environment string
 	KibUrl      string
+	ProxyUrl    string
 	EsVer       string
 	URL         string
 	log         log.Logger
@@ -147,10 +158,10 @@ func (lark *LarkNotifier) Notify(evalContext *alerting.EvalContext) error {
 	lark.log.Debug("url: " + lark.URL)
 
 	cmd := &models.SendWebhookSync{
-		Url:  lark.URL,
-		Body: string(body),
+		Url:        lark.URL,
+		HttpHeader: map[string]string{"proxyUrl": lark.ProxyUrl},
+		Body:       string(body),
 	}
-
 	if err := bus.DispatchCtx(evalContext.Ctx, cmd); err != nil {
 		lark.log.Error("Failed to send Lark", "error", err, "lark", lark.Name)
 		return err
@@ -267,8 +278,9 @@ func (lark *LarkNotifier) parseResLog(evalContext *alerting.EvalContext) (map[st
 		rst[k] = _source.Get(k).MustString(v)
 	}
 	// Get index name from hit
-	if len(rst["message"]) > 100 {
-		rst["message"] = rst["message"][:100]
+	msgRune := []rune(rst["message"])
+	if len(msgRune) > 200 {
+		rst["message"] = string(msgRune[:200])
 	}
 	return rst, err
 }
@@ -290,6 +302,9 @@ func (lark *LarkNotifier) parseReqLog(evalContext *alerting.EvalContext) map[str
 func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alerting.EvalContext) string {
 	txt := ""
 	logUrl := ""
+	loc, _ := time.LoadLocation("Asia/Shanghai")
+	st := evalContext.Rule.LastStateChange.In(loc)
+	val["stateTime"] = st.Format("2006-01-02 15:04:05")
 	switch lark.EsVer {
 	case "5":
 		logUrl = fmt.Sprintf(`%s/app/kibana#/discover?_g=(refreshInterval:(display:Off,pause:!f,value:0),`+
@@ -301,7 +316,7 @@ func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alertin
 		logUrl = fmt.Sprintf(`%s/app/kibana#/discover?_g=(filters:!(),refreshInterval:(pause:!t,value:0),`+
 			`time:(from:'%s',to:'%s'))`+
 			`&_a=(columns:!(_source),filters:!(),index:'%s',interval:auto,`+
-			`query:(language:kuery,query:' %s '),sort:!())`,
+			`query:(language:lucene,query:' %s '),sort:!())`,
 			lark.KibUrl, val["from"], val["to"], val["index_pattern_id"], val["raw_query"])
 	}
 	resUri, err := url.Parse(logUrl)
@@ -311,6 +326,7 @@ func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alertin
 	case "Alerting":
 		txt = "**模块名称:** {{.module}}\n" +
 			"**环境:** {{.env}}\n" +
+			"**发生时间:** {{.stateTime}}\n" +
 			"**查询index:** {{.index}}\n" +
 			"**查询query:** {{.raw_query}}\n" +
 			"**RequestID:** {{.request_id}}\n" +
@@ -324,6 +340,7 @@ func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alertin
 	case "OK":
 		txt = "**模块名称:** {{.module}}\n" +
 			"**环境:** {{.env}}\n" +
+			"**恢复时间:** {{.stateTime}}\n" +
 			"**查询index:** {{.index}}\n" +
 			"**查询query:** {{.raw_query}}\n" +
 			"**规则信息:** {{.rule_msg}}\n" +

@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"golang.org/x/net/context/ctxhttp"
@@ -59,6 +60,16 @@ func (ns *NotificationService) sendWebRequestSync(ctx context.Context, webhook *
 
 	if webhook.ContentType == "" {
 		webhook.ContentType = "application/json"
+	}
+
+	proxyStr := webhook.HttpHeader["proxyUrl"]
+	proxyUrl, err := url.Parse(proxyStr)
+	if err == nil && proxyUrl.String() != "" {
+		netTransport.Proxy = http.ProxyURL(proxyUrl)
+		netTransport.DisableKeepAlives = true
+	} else {
+		netTransport.Proxy = http.ProxyFromEnvironment
+		netTransport.DisableKeepAlives = false
 	}
 
 	request.Header.Set("Content-Type", webhook.ContentType)
