@@ -335,8 +335,9 @@ func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alertin
 			"**报错日志:** {{.message}}\n" +
 			"**规则信息:** {{.rule_msg}}\n" +
 			"**图表:** [Grafana]({{.messageUrl}})\n" +
-			"**日志:** [Kibana]({{.logUrl}})\n" +
-			"<at id=all></at>"
+			"**日志:** [Kibana]({{.logUrl}})"
+		//"**日志:** [Kibana]({{.logUrl}})\n"
+		//	"<at id=all></at>"
 	case "OK":
 		txt = "**模块名称:** {{.module}}\n" +
 			"**环境:** {{.env}}\n" +
@@ -345,8 +346,9 @@ func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alertin
 			"**查询query:** {{.raw_query}}\n" +
 			"**规则信息:** {{.rule_msg}}\n" +
 			"**图表:** [Grafana]({{.messageUrl}})\n" +
-			"**日志:** [Kibana]({{.logUrl}})\n" +
-			"<at id=all></at>"
+			"**日志:** [Kibana]({{.logUrl}})"
+		//"**日志:** [Kibana]({{.logUrl}})\n" +
+		//"<at id=all></at>"
 	default:
 		txt = "testing"
 	}
