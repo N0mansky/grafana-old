@@ -100,6 +100,10 @@ func init() {
 						Value: "prod",
 						Label: "PROD",
 					},
+					{
+						Value: "pet",
+						Label: "PET",
+					},
 				},
 			},
 		},
