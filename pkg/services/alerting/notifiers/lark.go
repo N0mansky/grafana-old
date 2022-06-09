@@ -259,6 +259,7 @@ func (lark *LarkNotifier) parseResLog(evalContext *alerting.EvalContext) (map[st
 		"trace_id":   "",
 		"request_id": "",
 		"message":    "",
+		"cat_url":    "",
 		"module":     defaultModuleName,
 	}
 	rstLogEntry := evalContext.Logs[1].Data.(*simplejson.Json)
@@ -334,6 +335,7 @@ func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alertin
 			"**报错数量:** {{.Count}}\n" +
 			"**报错日志:** {{.message}}\n" +
 			"**规则信息:** {{.rule_msg}}\n" +
+			"**CAT:** [CAT]({{.cat_url}})\n" +
 			"**图表:** [Grafana]({{.messageUrl}})\n" +
 			"**日志:** [Kibana]({{.logUrl}})"
 		//"**日志:** [Kibana]({{.logUrl}})\n"
