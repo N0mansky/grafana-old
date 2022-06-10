@@ -38,7 +38,7 @@ func init() {
 				Label:        "Proxy URL",
 				Element:      alerting.ElementTypeInput,
 				InputType:    alerting.InputTypeText,
-				Placeholder:  "http://19.49.2.125:35366",
+				Placeholder:  "http://xxxxxxxxx:35366",
 				PropertyName: "proxyUrl",
 				Required:     false,
 			},
@@ -46,9 +46,17 @@ func init() {
 				Label:        "Kibana Url",
 				Element:      alerting.ElementTypeInput,
 				InputType:    alerting.InputTypeText,
-				Placeholder:  "https://elk.internal.pingxx.com",
+				Placeholder:  "https://elk.internal.xxxx.com",
 				PropertyName: "kibUrl",
 				Required:     true,
+			},
+			{
+				Label:        "CAT Url",
+				Element:      alerting.ElementTypeInput,
+				InputType:    alerting.InputTypeText,
+				Placeholder:  "https://xxxx.com",
+				PropertyName: "catUrl",
+				Required:     false,
 			},
 			{
 				Label:        "Message Type",
@@ -115,6 +123,7 @@ func newLarkNotifier(model *models.AlertNotification, _ alerting.GetDecryptedVal
 	proxyUrl := model.Settings.Get("proxyUrl").MustString()
 	env := model.Settings.Get("environment").MustString()
 	kibUrl := model.Settings.Get("kibUrl").MustString()
+	catUrl := model.Settings.Get("catUrl").MustString()
 	esVer := model.Settings.Get("esVer").MustString("7")
 	msgType := model.Settings.Get("msgType").MustString(defaultLarkMsgType)
 	if url == "" {
@@ -126,6 +135,7 @@ func newLarkNotifier(model *models.AlertNotification, _ alerting.GetDecryptedVal
 		MsgType:      msgType,
 		URL:          url,
 		KibUrl:       kibUrl,
+		CatUrl:       catUrl,
 		ProxyUrl:     proxyUrl,
 		EsVer:        esVer,
 		Environment:  env,
@@ -139,6 +149,7 @@ type LarkNotifier struct {
 	MsgType     string
 	Environment string
 	KibUrl      string
+	CatUrl      string
 	ProxyUrl    string
 	EsVer       string
 	URL         string
@@ -263,6 +274,7 @@ func (lark *LarkNotifier) parseResLog(evalContext *alerting.EvalContext) (map[st
 		"trace_id":   "",
 		"request_id": "",
 		"message":    "",
+		"cat_url":    "",
 		"module":     defaultModuleName,
 	}
 	rstLogEntry := evalContext.Logs[1].Data.(*simplejson.Json)
@@ -323,6 +335,12 @@ func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alertin
 			`query:(language:lucene,query:' %s '),sort:!())`,
 			lark.KibUrl, val["from"], val["to"], val["index_pattern_id"], val["raw_query"])
 	}
+	if lark.CatUrl != "" && val["cat_url"] != "" {
+		cat_url := val["cat_url"]
+		u, _ := url.Parse(cat_url)
+		fmt.Printf(u.Path)
+		val["cat_url"] = fmt.Sprintf(`%s%s?%v`, lark.CatUrl, u.Path, u.RawQuery)
+	}
 	resUri, err := url.Parse(logUrl)
 	val["logUrl"] = resUri.String()
 	alertStatus := evalContext.GetStateModel().Text
@@ -338,6 +356,7 @@ func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alertin
 			"**报错数量:** {{.Count}}\n" +
 			"**报错日志:** {{.message}}\n" +
 			"**规则信息:** {{.rule_msg}}\n" +
+			"**CAT:** [CAT]({{.cat_url}})\n" +
 			"**图表:** [Grafana]({{.messageUrl}})\n" +
 			"**日志:** [Kibana]({{.logUrl}})"
 		//"**日志:** [Kibana]({{.logUrl}})\n"
