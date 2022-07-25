@@ -114,6 +114,62 @@ func init() {
 					},
 				},
 			},
+			{
+				Label:        "UI Color",
+				Element:      alerting.ElementTypeSelect,
+				PropertyName: "uiColor",
+				Required:     false,
+				SelectOptions: []alerting.SelectOption{
+					{
+						Value: "blue",
+						Label: "blue",
+					},
+					{
+						Value: "wathet",
+						Label: "wathet",
+					},
+					{
+						Value: "turquoise",
+						Label: "turquoise",
+					},
+					{
+						Value: "green",
+						Label: "green",
+					},
+					{
+						Value: "yellow",
+						Label: "yellow",
+					},
+					{
+						Value: "orange",
+						Label: "orange",
+					},
+					{
+						Value: "red",
+						Label: "red",
+					},
+					{
+						Value: "carmine",
+						Label: "carmine",
+					},
+					{
+						Value: "violet",
+						Label: "violet",
+					},
+					{
+						Value: "purple",
+						Label: "purple",
+					},
+					{
+						Value: "indigo",
+						Label: "indigo",
+					},
+					{
+						Value: "grey",
+						Label: "grey",
+					},
+				},
+			},
 		},
 	})
 }
@@ -121,6 +177,7 @@ func init() {
 func newLarkNotifier(model *models.AlertNotification, _ alerting.GetDecryptedValueFn) (alerting.Notifier, error) {
 	url := model.Settings.Get("url").MustString()
 	proxyUrl := model.Settings.Get("proxyUrl").MustString()
+	uiColor := model.Settings.Get("uiColor").MustString("red")
 	env := model.Settings.Get("environment").MustString()
 	kibUrl := model.Settings.Get("kibUrl").MustString()
 	catUrl := model.Settings.Get("catUrl").MustString()
@@ -137,6 +194,7 @@ func newLarkNotifier(model *models.AlertNotification, _ alerting.GetDecryptedVal
 		KibUrl:       kibUrl,
 		CatUrl:       catUrl,
 		ProxyUrl:     proxyUrl,
+		UIColor:      uiColor,
 		EsVer:        esVer,
 		Environment:  env,
 		log:          log.New("alerting.notifier.lark"),
@@ -149,6 +207,7 @@ type LarkNotifier struct {
 	MsgType     string
 	Environment string
 	KibUrl      string
+	UIColor     string
 	CatUrl      string
 	ProxyUrl    string
 	EsVer       string
@@ -188,7 +247,7 @@ func (lark *LarkNotifier) Notify(evalContext *alerting.EvalContext) error {
 func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL string) ([]byte, error) {
 	lark.log.Info("messageUrl:" + messageURL)
 	alertStatus := evalContext.GetStateModel().Text
-	alertColor := "red"
+	alertColor := lark.UIColor
 	if alertStatus == "OK" {
 		alertColor = "green"
 	}
@@ -352,7 +411,7 @@ func (lark *LarkNotifier) renderTmpl(val map[string]string, evalContext *alertin
 			"**查询index:** {{.index}}\n" +
 			"**查询query:** {{.raw_query}}\n" +
 			"**RequestID:** {{.request_id}}\n" +
-			"**TraceID:** {{.trace_id}}\n" +
+			//"**TraceID:** {{.trace_id}}\n" +
 			"**报错数量:** {{.Count}}\n" +
 			"**报错日志:** {{.message}}\n" +
 			"**规则信息:** {{.rule_msg}}\n" +
