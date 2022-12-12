@@ -291,7 +291,7 @@ func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL 
 		bodyMsg = map[string]interface{}{
 			"msg_type": "text",
 			"content": map[string]string{
-				"text": rst["rule_msg"],
+				"text": rst["message"],
 			},
 		}
 	case "card":
