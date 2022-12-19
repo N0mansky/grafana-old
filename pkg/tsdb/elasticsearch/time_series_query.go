@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Masterminds/semver"
@@ -72,6 +73,14 @@ func (e *timeSeriesQuery) processQuery(q *Query, ms *es.MultiSearchRequestBuilde
 
 	b := ms.Search(interval)
 	b.Size(1)
+	// Get the size of log
+	logSizeStr := strings.Split(q.Alias, "_")
+	if len(logSizeStr) > 1 && logSizeStr[0] == "logsize"{
+		logSizeNum, err := strconv.Atoi(logSizeStr[1])
+		if err == nil{
+			b.Size(logSizeNum)
+		}
+	}
 	filters := b.Query().Bool().Filter()
 	filters.AddDateRangeFilter(e.client.GetTimeField(), to, from, es.DateFormatEpochMS)
 

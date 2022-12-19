@@ -321,7 +321,7 @@ func (lark *LarkNotifier) genBody(evalContext *alerting.EvalContext, messageURL 
 	return json.Marshal(bodyMsg)
 }
 
-//parseResLog parse log from elasticsearch and return a map[string]string
+// parseResLog parse log from elasticsearch and return a map[string]string
 func (lark *LarkNotifier) parseResLog(evalContext *alerting.EvalContext) (map[string]string, error) {
 	// Get request result : Condition[0]: Query Result
 	dbRef, err := evalContext.GetDashboardUID()
@@ -336,6 +336,9 @@ func (lark *LarkNotifier) parseResLog(evalContext *alerting.EvalContext) (map[st
 		"cat_url":    "",
 		"module":     defaultModuleName,
 	}
+
+	// Get response from the logs, the first of the list is the request of datasource,
+	// and the second of the list is the response.
 	rstLogEntry := evalContext.Logs[1].Data.(*simplejson.Json)
 	resDat := rstLogEntry.GetPath("resp_data")
 	resByte, err := resDat.MarshalJSON()
@@ -345,18 +348,23 @@ func (lark *LarkNotifier) parseResLog(evalContext *alerting.EvalContext) (map[st
 	rst["index"] = r.FindStringSubmatch(queryData)[1]
 	hits := resJson.GetPath("response", "data", "responses").
 		GetIndex(0).
-		GetPath("hits", "hits").
-		GetIndex(0)
-	_source := hits.Get("_source")
+		GetPath("hits", "hits")
+	hitsLen := len(hits.MustArray())
+	_source := hits.GetIndex(0).Get("_source")
 	// Get document field from _source
 	for k, v := range rst {
 		rst[k] = _source.Get(k).MustString(v)
 	}
 	// Get index name from hit
-	msgRune := []rune(rst["message"])
-	if len(msgRune) > 200 {
-		rst["message"] = string(msgRune[:200])
+	for i := 1; i < hitsLen; i++ {
+		_source := hits.GetIndex(i).Get("_source")
+		rst["message"] = rst["message"] +"\n" + _source.Get("message").MustString("")
 	}
+	msgRune := []rune(rst["message"])
+	if hitsLen == 1 && len(msgRune) > 200{
+		msgRune = msgRune[:200]
+	}
+	rst["message"] = string(msgRune)
 	return rst, err
 }
 
